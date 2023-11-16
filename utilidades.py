@@ -1,6 +1,7 @@
+from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Iterator, Sequence
 
 import cv2
 import numpy as np
@@ -11,6 +12,36 @@ ImagemTipo = cv2.Mat | np.ndarray[Any, np.dtype[np.generic]] | np.ndarray
 class ImagemGrupo(StrEnum):
     G1 = 'G1'
     G2 = 'G2'
+
+
+class FiguraTipo(StrEnum):
+    ELIPSE = 'elipse'
+    RETANGULO = 'retangulo'
+
+
+@dataclass
+class Figura:
+    tipo: FiguraTipo
+    centro: Sequence[float]
+    largura: int
+    altura: int
+    angulo: float
+    area: float
+    box: np.ndarray = None
+
+    def tuple(self) -> tuple[Sequence[float], Sequence[int], float]:
+        return self.centro, (self.largura, self.altura), self.angulo
+
+    def dentro(self, x, y) -> bool:
+        if self.tipo == FiguraTipo.ELIPSE:
+            return (
+                    (
+                            (x - self.centro[0]) ** 2 / (self.largura / 2) ** 2
+                            + (y - self.centro[1]) ** 2 / (self.altura / 2) ** 2
+                    ) <= 1
+            )
+        else:
+            return cv2.pointPolygonTest(self.box, (x, y), False) >= 0
 
 
 def mostrar_imagem(img: ImagemTipo):
