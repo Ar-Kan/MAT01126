@@ -38,7 +38,7 @@ def encontra_contornos(imagem: ImagemTipo, limite: int) -> Sequence[np.ndarray]:
     return contornos
 
 
-def corrigir_persepctiva(imagem: ImagemTipo) -> tuple[ImagemTipo, int]:
+def corrigir_persepctiva(imagem: ImagemTipo) -> tuple[ImagemTipo, int, tuple[np.ndarray, tuple[int, int]]]:
     im_h, im_w = imagem.shape[:2]
     area = im_h * im_w
     imagem_corrigida = None
@@ -82,7 +82,7 @@ def corrigir_persepctiva(imagem: ImagemTipo) -> tuple[ImagemTipo, int]:
                 imagem_corrigida = cv2.warpPerspective(imagem, M, (max_w, max_h), flags=cv2.INTER_LINEAR)
                 # im = cv2.drawContours(imagem.copy(), [poligonos], 0, (0, 0, 0), 5)
                 # mostrar_imagem(im)
-                return imagem_corrigida, lim
+                return imagem_corrigida, lim, (M, (max_w, max_h))
             # NOTA: alternativa para encontrar o retângulo
             #       se na imagem não houver contornos com 4 lados podemos criar um retângulo no contorno
             #       e comparar com o contorno original
@@ -157,8 +157,6 @@ def classifica_figuras(imagem: ImagemTipo, figuras: list[Figura]) -> ImagemTipo:
     im_h, im_w = imagem.shape[:2]
     area = im_h * im_w
 
-    imagem = cinza_para_cor(imagem)
-
     elipses = sorted(filter(lambda f: f.tipo == FiguraTipo.ELIPSE, figuras), key=lambda f: f.area, reverse=True)
     retangulos = filter(lambda f: f.tipo == FiguraTipo.RETANGULO, figuras)
 
@@ -200,29 +198,57 @@ def classifica_figuras(imagem: ImagemTipo, figuras: list[Figura]) -> ImagemTipo:
     return imagem
 
 
-def run(nome: str | ImagemTipo) -> None:
-    if isinstance(nome, str):
-        imagem = cv2.imread(nome)
-    else:
-        imagem = nome
-    # mostrar_imagem(imagem)
-    imagem = cor_para_cinza(imagem)
-    # mostrar_imagem(imagem)
-    imagem = cv2.GaussianBlur(imagem, (3, 3), sigmaX=0, sigmaY=0)
+def run(nome: str) -> None:
+    imagem = cv2.imread(nome)
+    assert imagem is not None, f'Não foi possível abrir a imagem {nome!r}'
+
+    back = cv2.imread('./Parafuso/background.jpg')
+    back = cv2.resize(back, imagem.shape[:2][::-1])
+
+    back = cv2.GaussianBlur(back, (5, 5), 0)
+    img = cv2.GaussianBlur(imagem.copy(), (5, 5), 0)
+
+    # mostrar_imagem(img)
+    img = cor_para_cinza(cv2.absdiff(back, img))
+    # mostrar_imagem(img)
+    img = cv2.GaussianBlur(img, (3, 3), sigmaX=0, sigmaY=0)
+    img = mudar_resolucao(img, 0.5, False)
+    img, limite, correcao = corrigir_persepctiva(img)
+    figuras = encontrar_figuras(img, limite)
+
     imagem = mudar_resolucao(imagem, 0.5, False)
-    imagem, limite = corrigir_persepctiva(imagem)
-    figuras = encontrar_figuras(imagem, limite)
+    imagem = cv2.warpPerspective(imagem, *correcao, flags=cv2.INTER_LINEAR)
     imagem = classifica_figuras(imagem, figuras)
     mostrar_imagem(imagem)
+
+
+def tenta_executar(nome: str) -> None:
+    try:
+        run(nome)
+    except Exception as e:
+        print(f'Não foi possível processar a imagem {nome!r}: {e}')
 
 
 if __name__ == '__main__':
     import os
 
-    # run(f'./Parafuso/G1/imagem_G1_06.jpg')
-    for i in os.listdir('./Parafuso/G1'):
-        print(f'Processando {i}')
-        run(f'./Parafuso/G1/{i}')
+    # run('./Parafuso/G2/imagem_G2_01.jpg')
+    # for i in os.listdir('./Parafuso/G1'):
+    #     print(f'Processando {i}')
+    #     run(f'./Parafuso/G1/{i}')
     for i in os.listdir('./Parafuso/G2'):
         print(f'Processando {i}')
-        run(f'./Parafuso/G2/{i}')
+        tenta_executar(f'./Parafuso/G2/{i}')
+
+    # imagem = cv2.imread('./Parafuso/G1/imagem_G1_06.jpg')
+    # back = cv2.imread('./Parafuso/background.jpg')
+    # back = cv2.resize(back, imagem.shape[:2][::-1])
+    #
+    # back = cv2.GaussianBlur(back, (5, 5), 0)
+    # imagem1 = cv2.GaussianBlur(imagem, (5, 5), 0)
+    # # imagem = cv2.absdiff(back, imagem1)
+    # # imagem = cv2.cvtColor(imagem, cv2.COLOR_BGR2GRAY)
+    # # imagem = cv2.GaussianBlur(imagem, (5, 5), 0)
+    # # imagem = cv2.threshold(imagem, 100, 255, cv2.THRESH_BINARY)[1]
+    # # mostrar_imagem(imagem)
+    # run(cv2.absdiff(back, imagem1))
