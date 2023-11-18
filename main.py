@@ -32,89 +32,68 @@ def encontra_contornos(imagem: ImagemTipo, limite: int) -> Sequence[np.ndarray]:
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     abertura = cv2.morphologyEx(thresh, cv2.MORPH_OPEN, kernel, iterations=1)
     invertida = 255 - abertura
-    # mostrar_imagem(invert)
+    # mostrar_imagem(invertida)
 
     contornos, _ = cv2.findContours(invertida, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
     return contornos
 
 
-def corrigir_perspectiva_e_dimensoes(imagem: ImagemTipo) -> tuple[ImagemTipo, int]:
+def corrigir_persepctiva(imagem: ImagemTipo) -> tuple[ImagemTipo, int]:
     im_h, im_w = imagem.shape[:2]
     area = im_h * im_w
     imagem_corrigida = None
-    transformada = None
-    lim = 255
+    lim = 0
     img = imagem.copy()
 
-    # corrigir perspectiva
     for lim in range(255, 0, -20):
         _, transformada = cv2.threshold(img, lim, 255, cv2.CHAIN_APPROX_NONE)
         contornos, _ = cv2.findContours(transformada, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        # img = cv2.drawContours(img, contornos, -1, (0, 255, 0), 3)
-        # mostrar_imagem(img)
+        img1 = cv2.drawContours(img.copy(), contornos, -1, (0, 255, 0), 3)
+        # mostrar_imagem(img1)
         for c in contornos:
+            a = cv2.contourArea(c)
+            if area * 0.5 > a or a > area * 0.9:
+                continue
+            if cv2.isContourConvex(c):
+                continue
+            if len(c) < 4:
+                continue
+            if cv2.arcLength(c, True) < 100:
+                continue
             poligonos = cv2.approxPolyDP(c, 0.01 * cv2.arcLength(c, True), True)
-            if len(poligonos) == 4 and area * 0.8 > cv2.contourArea(c) > area * 0.5:
+            if len(poligonos) == 4:
                 *_, largura, altura = cv2.boundingRect(poligonos)
+                pA, pB, pC, pD = poligonos
+                wAD = int(np.linalg.norm(pA - pD))
+                wBC = int(np.linalg.norm(pB - pC))
+                hAB = int(np.linalg.norm(pA - pB))
+                hCD = int(np.linalg.norm(pC - pD))
+                max_w = max(wAD, wBC)
+                max_h = max(hAB, hCD)
                 M = cv2.getPerspectiveTransform(
-                    poligonos.astype(np.float32),
-                    np.array([[0, 0], [0, altura], [largura, altura], [largura, 0]], dtype=np.float32)
+                    np.array([pA, pB, pC, pD], dtype=np.float32),
+                    np.array([
+                        [0, 0],
+                        [0, max_h - 1],
+                        [max_w - 1, max_h - 1],
+                        [max_w - 1, 0]
+                    ], dtype=np.float32)
                 )
-                imagem_corrigida = cv2.warpPerspective(imagem, M, (largura, altura))
-                # cv2.drawContours(imagem, [poligonos], 0, (0, 0, 0), 5)
+                imagem_corrigida = cv2.warpPerspective(imagem, M, (max_w, max_h), flags=cv2.INTER_LINEAR)
+                # im = cv2.drawContours(imagem.copy(), [poligonos], 0, (0, 0, 0), 5)
+                # mostrar_imagem(im)
+                return imagem_corrigida, lim
+            # NOTA: alternativa para encontrar o retângulo
+            #       se na imagem não houver contornos com 4 lados podemos criar um retângulo no contorno
+            #       e comparar com o contorno original
+            # else:
+            #     box = np.int16(cv2.boxPoints(cv2.minAreaRect(c)))
+            #     # match shapes
+            #     match = cv2.matchShapes(box, poligonos, cv2.CONTOURS_MATCH_I1, 0.0)
+            #     print(f'match: {match}')
 
     if imagem_corrigida is None:
         raise Exception('Não foi possível corrigir a perspectiva da imagem')
-
-    # corrigir dimensões
-    fator = 1
-    # mostrar_imagem(imagem_corrigida)
-    im_h, im_w = imagem_corrigida.shape[:2]
-    while True:
-        imagem = cv2.resize(imagem_corrigida.copy(), (im_w, im_h), interpolation=cv2.INTER_LINEAR)
-        # mostrar_imagem(imagem)
-        # _, transformada = cv2.threshold(imagem, lim, 255, cv2.CHAIN_APPROX_NONE)
-        # contornos, _ = cv2.findContours(transformada, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        contornos = encontra_contornos(imagem, lim)
-        # cv2.drawContours(imagem, contornos, -1, (0, 255, 0), 3)
-        # mostrar_imagem(imagem)
-
-        # encontra elipses
-        elipses: list[Figura] = []
-        for c in contornos:
-            area_contorno = cv2.contourArea(c)
-            if not (10 < area_contorno < area * 0.4):
-                continue
-
-            el = cv2.fitEllipse(c)
-            eli_centro, (eli_largura, eli_altura), eli_angulo = el
-            if 0.5 < eli_largura / eli_altura < 2:
-                elipses.append(
-                    Figura(
-                        tipo=FiguraTipo.ELIPSE,
-                        centro=eli_centro,
-                        largura=eli_largura,
-                        altura=eli_altura,
-                        angulo=eli_angulo,
-                        area=np.pi * eli_largura * eli_altura / 4
-                    )
-                )
-        elipses = sorted(
-            filter(lambda f: f.tipo == FiguraTipo.ELIPSE, elipses),
-            key=lambda f: f.area,
-            reverse=True
-        )
-        if len(elipses) == 0:
-            raise Exception('Não foi possível corrigir as dimensões da imagem')
-        elipse = elipses[0]
-        aspect_ratio = elipse.largura / elipse.altura
-        if 0.9 < aspect_ratio < 1.1:
-            return imagem, lim
-        if aspect_ratio < 1:
-            fator -= 0.1
-        else:
-            fator += 0.1
-        im_w = int(im_w * fator)
 
 
 def encontrar_figuras(imagem: ImagemTipo, limite: int) -> list[Figura]:
@@ -220,16 +199,26 @@ def classifica_figuras(imagem: ImagemTipo, figuras: list[Figura]) -> ImagemTipo:
     return imagem
 
 
-if __name__ == '__main__':
-    # imagem = cv2.imread('./Parafuso/G1/imagem_G1_01.jpg')  # peças regulares
-    # imagem = cv2.imread('./Parafuso/G2/imagem_G2_01.jpg')  # pouca luminosidade
-    imagem = cv2.imread('./Parafuso/G2/imagem_G2_06.jpg')  # parafuso torto
+def run(nome: str):
+    imagem = cv2.imread(nome)
     # mostrar_imagem(imagem)
     imagem = cor_para_cinza(imagem)
     # mostrar_imagem(imagem)
     imagem = cv2.GaussianBlur(imagem, (3, 3), sigmaX=0, sigmaY=0)
     imagem = mudar_resolucao(imagem, 0.5, False)
-    imagem, limite = corrigir_perspectiva_e_dimensoes(imagem)
+    imagem, limite = corrigir_persepctiva(imagem)
     figuras = encontrar_figuras(imagem, limite)
     imagem = classifica_figuras(imagem, figuras)
     mostrar_imagem(imagem)
+
+
+if __name__ == '__main__':
+    import os
+
+    # run(f'./Parafuso/G1/imagem_G1_06.jpg')
+    for i in os.listdir('./Parafuso/G1'):
+        print(f'Processando {i}')
+        run(f'./Parafuso/G1/{i}')
+    for i in os.listdir('./Parafuso/G2'):
+        print(f'Processando {i}')
+        run(f'./Parafuso/G2/{i}')
