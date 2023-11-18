@@ -48,7 +48,7 @@ def corrigir_persepctiva(imagem: ImagemTipo) -> tuple[ImagemTipo, int]:
     for lim in range(255, 0, -20):
         _, transformada = cv2.threshold(img, lim, 255, cv2.CHAIN_APPROX_NONE)
         contornos, _ = cv2.findContours(transformada, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        img1 = cv2.drawContours(img.copy(), contornos, -1, (0, 255, 0), 3)
+        # img1 = cv2.drawContours(img.copy(), contornos, -1, (0, 255, 0), 3)
         # mostrar_imagem(img1)
         for c in contornos:
             a = cv2.contourArea(c)
@@ -109,37 +109,38 @@ def encontrar_figuras(imagem: ImagemTipo, limite: int) -> list[Figura]:
         if not (10 < area_contorno < area * 0.2) or area_relativa < 0.0005:
             continue
 
-        # elipse
-        eli_centro, (eli_largura, eli_altura), eli_angulo = cv2.fitEllipse(c)
-        eli_area = np.pi * eli_largura * eli_altura / 4
-        if 0.5 < eli_largura / eli_altura < 2:
-            figuras.append(
-                Figura(
-                    tipo=FiguraTipo.ELIPSE,
-                    centro=eli_centro,
-                    largura=eli_largura,
-                    altura=eli_altura,
-                    angulo=eli_angulo,
-                    area=eli_area
+        if len(c) > 4:
+            # elipse
+            eli_centro, (eli_largura, eli_altura), eli_angulo = cv2.fitEllipse(c)
+            eli_area = np.pi * eli_largura * eli_altura / 4
+            if 0.5 < eli_largura / eli_altura < 2:
+                figuras.append(
+                    Figura(
+                        tipo=FiguraTipo.ELIPSE,
+                        centro=eli_centro,
+                        largura=eli_largura,
+                        altura=eli_altura,
+                        angulo=eli_angulo,
+                        area=eli_area
+                    )
                 )
-            )
+                continue
 
-        else:
-            # retangulo
-            ret_centro, (ret_largura, ret_altura), ret_angulo = cv2.minAreaRect(c)
-            box = cv2.boxPoints((ret_centro, (ret_largura, ret_altura), ret_angulo))
-            box = np.int16(box)
-            figuras.append(
-                Figura(
-                    tipo=FiguraTipo.RETANGULO,
-                    centro=ret_centro,
-                    largura=ret_largura,
-                    altura=ret_altura,
-                    angulo=ret_angulo,
-                    area=ret_largura * ret_altura,
-                    box=box
-                )
+        # retangulo
+        ret_centro, (ret_largura, ret_altura), ret_angulo = cv2.minAreaRect(c)
+        box = cv2.boxPoints((ret_centro, (ret_largura, ret_altura), ret_angulo))
+        box = np.int16(box)
+        figuras.append(
+            Figura(
+                tipo=FiguraTipo.RETANGULO,
+                centro=ret_centro,
+                largura=ret_largura,
+                altura=ret_altura,
+                angulo=ret_angulo,
+                area=ret_largura * ret_altura,
+                box=box
             )
+        )
     return figuras
 
 
@@ -199,8 +200,11 @@ def classifica_figuras(imagem: ImagemTipo, figuras: list[Figura]) -> ImagemTipo:
     return imagem
 
 
-def run(nome: str):
-    imagem = cv2.imread(nome)
+def run(nome: str | ImagemTipo) -> None:
+    if isinstance(nome, str):
+        imagem = cv2.imread(nome)
+    else:
+        imagem = nome
     # mostrar_imagem(imagem)
     imagem = cor_para_cinza(imagem)
     # mostrar_imagem(imagem)
